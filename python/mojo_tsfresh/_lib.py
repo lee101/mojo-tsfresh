@@ -30,6 +30,7 @@ _SIGNATURES = {
     "mts_threshold_statistics": ([I, I, F, I], F),
     "mts_number_crossing_m": ([I, I, F], I),
     "mts_number_peaks": ([I, I, I], I),
+    "mts_number_peaks_parallel": ([I, I, I, I, I], I),
     "mts_autocorrelation": ([I, I, I], F),
     "mts_autocorrelations": ([I, I, I, I], None),
     "mts_lag_nonlinearity": ([I, I, I, I], F),

@@ -12,7 +12,7 @@ parity checks.
 
 ## Coverage
 
-There are 59 public calculator names. Forty-five are backed by Mojo kernels:
+There are 59 public calculator names. Forty-four are backed by Mojo kernels:
 
 - Core statistics and changes: energy, sum, mean, variance, standard deviation,
   root mean square, extrema and their locations, absolute and mean changes,
@@ -22,13 +22,14 @@ There are 59 public calculator names. Forty-five are backed by Mojo kernels:
   peaks.
 - Entropy: `binned_entropy`, `permutation_entropy`, `approximate_entropy`, and
   `sample_entropy`.
-- Chunk, trend, and frequency features: `energy_ratio_by_chunks`,
-  `index_mass_quantile`, `linear_trend`, `agg_linear_trend`, and requested
-  `fft_coefficient` bins.
+- Chunk and trend features: `energy_ratio_by_chunks`, `index_mass_quantile`,
+  `linear_trend`, and `agg_linear_trend`.
 
 Fourteen low-compute compatibility calculators involving sorting, hashing, or
 pandas sample moments use NumPy or pandas: median, quantile, duplicate and
 recurrence features, `mean_n_absolute_max`, length, skewness, and kurtosis.
+`fft_coefficient` uses NumPy's optimized real FFT; computing requested bins
+with a direct DFT was slower even after SIMD vectorization.
 
 `extract_features` supports a pandas DataFrame in tsfresh's long or wide
 layout, `default_fc_parameters`, `kind_to_fc_parameters`, sorting, the standard
@@ -105,20 +106,24 @@ tsfresh was faster.
 
 | Benchmark | mojo-tsfresh | tsfresh 0.21.2 | Speedup |
 |---|---:|---:|---:|
-| absolute_sum_of_changes (5M) | 5.976 ms | 57.188 ms | 9.57x |
-| c3 lag=7 (5M) | 9.052 ms | 81.437 ms | 9.00x |
-| number_peaks support=5 (2M) | 41.901 ms | 40.085 ms | 0.96x |
-| permutation_entropy d=4 (300k) | 3.540 ms | 535.464 ms | 151.27x |
-| approximate_entropy m=2 (1,200) | 10.151 ms | 257.852 ms | 25.40x |
-| sample_entropy (2,000) | 32.071 ms | 526.156 ms | 16.41x |
-| agg_autocorrelation 200 lags (1,200) | 0.450 ms | 0.624 ms | 1.39x |
-| fft_coefficient 4 bins (100k) | 11.516 ms | 1.573 ms | 0.14x |
+| absolute_sum_of_changes (5M) | 8.225 ms | 41.478 ms | 5.04x |
+| c3 lag=7 (5M) | 9.506 ms | 54.710 ms | 5.76x |
+| number_peaks support=5 (2M) | 0.995 ms | 43.063 ms | 43.27x |
+| permutation_entropy d=4 (300k) | 3.863 ms | 579.208 ms | 149.93x |
+| approximate_entropy m=2 (1,200) | 10.339 ms | 232.962 ms | 22.53x |
+| sample_entropy (2,000) | 33.377 ms | 494.582 ms | 14.82x |
+| agg_autocorrelation 200 lags (1,200) | 0.453 ms | 0.423 ms | 0.93x |
+| fft_coefficient 4 bins (100k) | 1.475 ms | 1.500 ms | 1.02x |
 
-The entropy and fused window kernels benefit most because Mojo avoids large
-temporary arrays and Python-level iteration. Requested Fourier bins use a
-direct DFT in this subset; upstream's optimized full real FFT is about 7.3
-times faster in the measured four-bin case. Upstream also narrowly wins the
-measured support-five peak count.
+The peak kernel compares candidates in SIMD-width batches and uses eight CPU
+workers only at 262,144 samples or above. Smaller inputs stay serial to avoid
+thread-launch overhead. Fourier coefficients use a single optimized real FFT.
+
+No GPU path is included. The kernels that remained performance targets were
+either memory-bound peak comparisons or this 100k-sample FFT, where device
+allocation and transfer overhead do not justify competing with the optimized
+CPU implementation. The arithmetic-heavy entropy kernels were already more
+than 5x ahead and were intentionally left alone.
 
 ## How it works
 

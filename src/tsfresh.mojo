@@ -1,4 +1,6 @@
 from std.math import atan2, cos, isnan, log, sin, sqrt
+from max.algorithm import parallelize
+from std.runtime import initialize_runtime
 from std.sys.info import simd_width_of
 
 comptime PI = 3.14159265358979323846264338327950288
@@ -267,20 +269,58 @@ def mts_number_crossing_m(x_addr: Int, n: Int, threshold: Float64) abi("C") -> I
     return count
 
 
+def count_peaks(x: FPtr, start: Int, end: Int, support: Int) -> Int:
+    var count = SIMD[DType.int64, W](0)
+    var i = start
+    while i + W <= end:
+        var center = x.load[width=W](i)
+        var peaks = SIMD[DType.bool, W](fill=True)
+        for offset in range(1, support + 1):
+            peaks &= center.gt(x.load[width=W](i - offset))
+            peaks &= center.gt(x.load[width=W](i + offset))
+        count += peaks.cast[DType.int64]()
+        i += W
+    var result = Int(count.reduce_add())
+    while i < end:
+        var peak = True
+        for offset in range(1, support + 1):
+            if not (x[i] > x[i - offset] and x[i] > x[i + offset]):
+                peak = False
+        if peak:
+            result += 1
+        i += 1
+    return result
+
+
 @export("mts_number_peaks")
 def mts_number_peaks(x_addr: Int, length: Int, support: Int) abi("C") -> Int:
     if support <= 0 or 2 * support >= length:
         return 0
+    return count_peaks(fp(x_addr), support, length - support, support)
+
+
+@export("mts_number_peaks_parallel")
+def mts_number_peaks_parallel(
+    x_addr: Int, length: Int, support: Int, scratch_addr: Int, workers: Int
+) abi("C") -> Int:
+    if support <= 0 or 2 * support >= length:
+        return 0
     var x = fp(x_addr)
-    var count = 0
-    for i in range(support, length - support):
-        var peak = True
-        for offset in range(1, support + 1):
-            if x[i] <= x[i - offset] or x[i] <= x[i + offset]:
-                peak = False
-        if peak:
-            count += 1
-    return count
+    var scratch = ip(scratch_addr)
+    var candidates = length - 2 * support
+
+    @__parameter
+    def work(worker: Int):
+        var start = support + candidates * worker // workers
+        var end = support + candidates * (worker + 1) // workers
+        scratch[worker] = Int64(count_peaks(x, start, end, support))
+
+    initialize_runtime()
+    parallelize[work](workers, workers)
+    var result = 0
+    for worker in range(workers):
+        result += Int(scratch[worker])
+    return result
 
 
 @export("mts_autocorrelation")

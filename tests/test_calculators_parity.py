@@ -71,6 +71,20 @@ def test_simple_calculator_parity(signal, name, args):
     assert np.allclose(actual, expected, rtol=2e-9, atol=2e-10, equal_nan=True)
 
 
+def test_number_peaks_simd_tail():
+    x = np.array(
+        [0.0, 1.0, 3.0, 2.0, -1.0, 4.0, 0.0, 2.0, np.nan, 5.0, 3.0, 0.0, 1.0]
+    )
+    assert mojo.number_peaks(x, 2) == upstream.number_peaks(x, 2)
+
+
+@pytest.mark.parametrize("size", [262_143, 262_144])
+def test_number_peaks_parallel_threshold(size):
+    rng = np.random.default_rng(size)
+    x = np.ascontiguousarray(rng.normal(size=size))
+    assert mojo.number_peaks(x, 5) == upstream.number_peaks(x, 5)
+
+
 @pytest.mark.parametrize(
     "name,args",
     [

@@ -9,6 +9,10 @@ from scipy.special import stdtr
 from .._lib import addr, array, lib
 
 
+_PEAKS_PARALLEL_THRESHOLD = 262_144
+_PEAKS_WORKERS = 8
+
+
 def set_property(key, value):
     def decorate_func(func):
         setattr(func, key, value)
@@ -246,6 +250,11 @@ def number_crossing_m(x, m):
 @_simple
 def number_peaks(x, n):
     a = _x(x)
+    if a.size >= _PEAKS_PARALLEL_THRESHOLD:
+        scratch = np.empty(_PEAKS_WORKERS, dtype=np.int64)
+        return lib().mts_number_peaks_parallel(
+            addr(a), a.size, int(n), addr(scratch), _PEAKS_WORKERS
+        )
     return lib().mts_number_peaks(addr(a), a.size, int(n))
 
 
@@ -406,30 +415,24 @@ def fft_coefficient(x, param):
     assert min(config["coeff"] for config in param) >= 0
     assert {config["attr"] for config in param} <= {"imag", "real", "abs", "angle"}
     a = _x(x)
-    cache = {}
+    transformed = np.fft.rfft(a)
     values = []
     keys = []
     for config in param:
         coefficient = int(config["coeff"])
-        if coefficient not in cache:
-            real = np.empty(1, dtype=np.float64)
-            imag = np.empty(1, dtype=np.float64)
-            lib().mts_dft_coefficient(
-                addr(a), a.size, coefficient, addr(real), addr(imag)
-            )
-            if coefficient == 0 or (a.size % 2 == 0 and coefficient == a.size // 2):
-                imag[0] = 0.0
-            cache[coefficient] = complex(real[0], imag[0])
-        z = cache[coefficient]
         attr = config["attr"]
-        if attr == "real":
-            value = z.real
-        elif attr == "imag":
-            value = z.imag
-        elif attr == "abs":
-            value = abs(z)
+        if coefficient >= transformed.size:
+            value = np.nan
         else:
-            value = math.degrees(math.atan2(z.imag, z.real))
+            z = transformed[coefficient]
+            if attr == "real":
+                value = z.real
+            elif attr == "imag":
+                value = z.imag
+            elif attr == "abs":
+                value = abs(z)
+            else:
+                value = math.degrees(math.atan2(z.imag, z.real))
         keys.append(f'attr_"{attr}"__coeff_{coefficient}')
         values.append(value)
     return zip(keys, values)

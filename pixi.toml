@@ -21,6 +21,7 @@ numpy = "<2.5"
 scipy = "*"
 pandas = "*"
 setuptools = "*"
+max = ">=26.6.0.dev2026081105,<27"
 
 [pypi-dependencies]
 tsfresh = "==0.21.2"
